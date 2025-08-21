@@ -4,10 +4,7 @@ Una aplicación móvil completa, desarrollada con **React Native (Expo)**, dise�
 
 La característica principal de esta app es su capacidad para **procesar pedidos de texto (ej. de WhatsApp) usando la API de Google Gemini**, automatizando la carga de ventas y minimizando errores manuales.
 
-![Imagen de la App](https://i.imgur.com/YOUR_IMAGE_ID.png) 
-*(Reemplaza esta URL con una captura de pantalla de tu app)*
 
----
 
 ## ✨ Características Principales
 
@@ -63,7 +60,7 @@ Sigue estos pasos para ejecutar el proyecto en tu entorno local.
 
 3.  **Configurar la API Key de Gemini:**
     * Para que la función de procesamiento de pedidos funcione, necesitas una API key de Google AI Studio.
-    * Obtén tu clave gratuita en [**aistudio.google.com/app/apikey**](https://aistudio.google.com/app/apikey).
+    * Obtener tu clave gratuita de gemini IA.
     * Abre el archivo `NewSaleScreen.js` (o `App.js` si no lo has separado) y pega tu clave en la siguiente línea:
         ```javascript
         const apiKey = "AQUÍ_VA_TU_API_KEY";
