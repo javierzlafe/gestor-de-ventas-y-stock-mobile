@@ -1,5 +1,5 @@
 // App.js
-// Versión con IA y diseño estético renovado.
+// Versión para React Native con IA, diseño estético, gestión de clientes y estado de venta.
 
 import React, { useState, useEffect, createContext, useContext } from 'react';
 import {
@@ -14,7 +14,7 @@ import {
   Modal,
   ScrollView,
   ActivityIndicator,
-  StatusBar, // Importado para controlar la barra de estado
+  StatusBar,
 } from 'react-native';
 
 // Importaciones de librerías para Expo
@@ -39,11 +39,16 @@ const COLORS = {
   text_primary: '#1C1C1E', // Negro sutil para textos principales
   text_secondary: '#8A8A8E', // Gris para textos secundarios y detalles
   border: '#E5E5EA',
+  // NUEVO: Colores para los estados de venta
+  status_pending_bg: '#FFF6E5',
+  status_pending_text: '#FF9500',
+  status_delivered_bg: '#E6F4EA',
+  status_delivered_text: '#4CAF50',
 };
 
 
 // -------------------------------------------------------------------
-// 1. CONTEXTO GLOBAL (Sin cambios en la funcionalidad)
+// 1. CONTEXTO GLOBAL (Con nuevas funciones)
 // -------------------------------------------------------------------
 const AppContext = createContext();
 
@@ -135,8 +140,16 @@ const AppProvider = ({ children }) => {
     }
   };
 
+  const updateSaleStatus = (saleId, newStatus) => {
+    setSales(prevSales =>
+      prevSales.map(sale =>
+        sale.id === saleId ? { ...sale, status: newStatus } : sale
+      )
+    );
+  };
+
   return (
-    <AppContext.Provider value={{ products, sales, addProduct, editProduct, updateStock, addSale, deleteSale, deleteProduct, clearSales, isLoading }}>
+    <AppContext.Provider value={{ products, sales, addProduct, editProduct, updateStock, addSale, deleteSale, deleteProduct, clearSales, isLoading, updateSaleStatus }}>
       {children}
     </AppContext.Provider>
   );
@@ -161,6 +174,7 @@ const HomeScreen = ({ navigation }) => {
 
   const totalRevenue = todaySales.reduce((sum, s) => sum + s.total, 0);
   const totalProfit = todaySales.reduce((sum, s) => sum + s.profit, 0);
+  const pendingSales = sales.filter(s => s.status === 'Pendiente').length;
 
   return (
     <SafeAreaView style={styles.container}>
@@ -182,6 +196,16 @@ const HomeScreen = ({ navigation }) => {
             <Text style={styles.summaryValue}>${totalProfit.toFixed(2)}</Text>
           </View>
         </View>
+
+        {pendingSales > 0 && (
+          <View style={[styles.summaryBox, { width: '100%', marginBottom: 24, flexDirection: 'row', justifyContent: 'space-between' }]}>
+            <View style={{alignItems: 'flex-start'}}>
+                <Icon name="archive-outline" size={32} color={COLORS.accent} />
+                <Text style={[styles.summaryLabel, {marginTop: 8}]}>Pedidos Pendientes</Text>
+            </View>
+            <Text style={[styles.summaryValue, {fontSize: 32, color: COLORS.accent}]}>{pendingSales}</Text>
+          </View>
+        )}
 
         <View style={styles.menuContainer}>
           <TouchableOpacity style={styles.menuButton} onPress={() => navigation.navigate('Nueva Venta')}>
@@ -273,7 +297,6 @@ const InventoryScreen = () => {
         <Icon name="add" size={30} color="#fff" />
       </TouchableOpacity>
 
-      {/* Modal para agregar y editar producto (unificado para consistencia) */}
       <Modal animationType="slide" transparent={true} visible={modalVisible || editModalVisible}>
         <View style={styles.modalContainer}>
           <View style={styles.modalView}>
@@ -303,6 +326,11 @@ const InventoryScreen = () => {
                 <Text style={styles.buttonTextPrimary}>Guardar</Text>
               </TouchableOpacity>
             </View>
+            {editingProduct && (
+                <TouchableOpacity style={{marginTop: 10}} onPress={() => { confirmDelete(editingProduct.id); setEditModalVisible(false); }}>
+                    <Text style={{color: COLORS.danger, textAlign: 'center'}}>Eliminar Producto</Text>
+                </TouchableOpacity>
+            )}
           </View>
         </View>
       </Modal>
@@ -316,6 +344,7 @@ const NewSaleScreen = ({ navigation }) => {
     const { products, addSale } = useApp();
     const [cart, setCart] = useState([]);
     const [isProcessing, setIsProcessing] = useState(false);
+    const [customerName, setCustomerName] = useState('');
 
     const handlePasteAndProcessOrder = async () => {
         setIsProcessing(true);
@@ -360,7 +389,7 @@ const NewSaleScreen = ({ navigation }) => {
                 setCart(newCart);
                 Alert.alert("Pedido Procesado", "El carrito se ha llenado con los productos del mensaje. Por favor, verifica antes de confirmar.");
             } else {
-                 throw new Error("La respuesta de la IA no tiene el formato esperado.");
+               throw new Error("La respuesta de la IA no tiene el formato esperado.");
             }
         } catch (error) {
             console.error("Error procesando el pedido:", error);
@@ -392,12 +421,23 @@ const NewSaleScreen = ({ navigation }) => {
             Alert.alert("Carrito vacío", "Agrega productos para realizar una venta.");
             return;
         }
+        if (!customerName.trim()) {
+            Alert.alert("Cliente Requerido", "Por favor, ingresa el nombre del cliente.");
+            return;
+        }
         const total = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
         const totalCost = cart.reduce((sum, item) => sum + item.cost * item.quantity, 0);
-        const sale = { date: new Date().toISOString(), items: cart.map(({ productId, quantity, price }) => ({ productId, quantity, price })), total, profit: total - totalCost };
+        const sale = { 
+            date: new Date().toISOString(), 
+            items: cart.map(({ productId, quantity, price }) => ({ productId, quantity, price })), 
+            total, 
+            profit: total - totalCost,
+            customerName: customerName.trim(),
+            status: 'Pendiente'
+        };
         addSale(sale);
-        Alert.alert("Venta Realizada", `Total: $${total.toFixed(2)}`);
-        navigation.goBack();
+        Alert.alert("Venta Realizada", `Venta para ${customerName.trim()} registrada con éxito. Total: $${total.toFixed(2)}`);
+        navigation.navigate('Historial');
     };
     
     const totalVenta = cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
@@ -411,15 +451,15 @@ const NewSaleScreen = ({ navigation }) => {
             {isProcessing && <ActivityIndicator size="large" color={COLORS.primary} style={{ marginVertical: 10 }} />}
             
             <View style={{flex: 1}}>
-              <Text style={styles.sectionTitle}>Productos</Text>
-              <FlatList data={products.filter(p => p.stock > 0)} keyExtractor={item => item.id}
-                  renderItem={({ item }) => (
-                      <TouchableOpacity style={styles.productSaleItem} onPress={() => addToCart(item)}>
-                          <Text style={styles.itemName}>{item.name} ({item.stock})</Text>
-                          <Text style={styles.itemDetails}>${item.sellingPrice.toFixed(2)}</Text>
-                      </TouchableOpacity>
-                  )}
-              />
+                <Text style={styles.sectionTitle}>Productos</Text>
+                <FlatList data={products.filter(p => p.stock > 0)} keyExtractor={item => item.id}
+                    renderItem={({ item }) => (
+                        <TouchableOpacity style={styles.productSaleItem} onPress={() => addToCart(item)}>
+                            <Text style={styles.itemName}>{item.name} ({item.stock})</Text>
+                            <Text style={styles.itemDetails}>${item.sellingPrice.toFixed(2)}</Text>
+                        </TouchableOpacity>
+                    )}
+                />
             </View>
             <View style={styles.cartContainer}>
                 <Text style={styles.sectionTitle}>Carrito</Text>
@@ -440,6 +480,12 @@ const NewSaleScreen = ({ navigation }) => {
                 />
             </View>
             <View style={styles.footer}>
+                <TextInput
+                    placeholder="Nombre del Cliente"
+                    style={[styles.input, {marginBottom: 10}]}
+                    value={customerName}
+                    onChangeText={setCustomerName}
+                />
                 <Text style={styles.totalText}>Total: ${totalVenta.toFixed(2)}</Text>
                 <TouchableOpacity style={styles.confirmButton} onPress={handleConfirmSale}>
                     <Text style={styles.buttonTextPrimary}>Confirmar Venta</Text>
@@ -452,7 +498,7 @@ const NewSaleScreen = ({ navigation }) => {
 
 // --- Pantalla de Historial de Ventas ---
 const HistoryScreen = () => {
-    const { sales, deleteSale, products, clearSales } = useApp();
+    const { sales, deleteSale, products, clearSales, updateSaleStatus } = useApp();
 
     const confirmDelete = (saleId) => {
         Alert.alert("Anular Venta", "¿Estás seguro de que quieres anular esta venta? El stock será devuelto.",
@@ -461,36 +507,89 @@ const HistoryScreen = () => {
     };
 
     const handleExport = async () => {
-      if (!(await Sharing.isAvailableAsync())) {
-          Alert.alert('Error', 'La función de compartir no está disponible en tu dispositivo.');
-          return;
-      }
-      try {
-          const productsData = products.map(p => ({ ID: p.id, Nombre: p.name, Costo: p.costPrice, Precio_Venta: p.sellingPrice, Stock: p.stock }));
-          const salesData = sales.map(s => {
-              const itemsStr = s.items.map(item => {
-                  const product = products.find(p => p.id === item.productId);
-                  return `${product ? product.name : 'N/A'} (x${item.quantity})`;
-              }).join(', ');
-              return { ID_Venta: s.id, Fecha: new Date(s.date).toLocaleString(), Items: itemsStr, Total: s.total, Ganancia: s.profit };
-          });
-          const wsProducts = XLSX.utils.json_to_sheet(productsData);
-          const wsSales = XLSX.utils.json_to_sheet(salesData);
-          const wb = XLSX.utils.book_new();
-          XLSX.utils.book_append_sheet(wb, wsProducts, "Inventario");
-          XLSX.utils.book_append_sheet(wb, wsSales, "Ventas");
-          const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
-          const nombreArchivo = `reporte_${new Date().toISOString().split('T')[0]}.xlsx`;
-          const uri = FileSystem.cacheDirectory + nombreArchivo;
-          await FileSystem.writeAsStringAsync(uri, wbout, { encoding: FileSystem.EncodingType.Base64 });
-          await Sharing.shareAsync(uri, { mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', dialogTitle: 'Exportar Reporte de Ventas' });
-          Alert.alert("Exportación Exitosa", "¿Deseas borrar las ventas del historial para comenzar un nuevo día?",
-              [{ text: "No", style: "cancel" }, { text: "Sí, borrar", onPress: () => clearSales(), style: "destructive" }]
-          );
-      } catch (error) {
-          console.error("Error al exportar:", error);
-          Alert.alert("Error", "No se pudo generar el archivo Excel.");
-      }
+        if (!(await Sharing.isAvailableAsync())) {
+            Alert.alert('Error', 'La función de compartir no está disponible en tu dispositivo.');
+            return;
+        }
+        try {
+            const today = new Date().toISOString().split('T')[0];
+            const todaySales = sales.filter(s => s.date.startsWith(today));
+
+            if (todaySales.length === 0) {
+                Alert.alert("Sin ventas hoy", "No hay ventas registradas en el día de hoy para generar un resumen.");
+                return;
+            }
+
+            // --- Lógica de cálculo de totales ---
+            const profitByProduct = {};
+            todaySales.forEach(sale => {
+                sale.items.forEach(item => {
+                    const product = products.find(p => p.id === item.productId);
+                    if (product) {
+                        const itemProfit = (product.sellingPrice - product.costPrice) * item.quantity;
+                        if (profitByProduct[product.name]) {
+                            profitByProduct[product.name] += itemProfit;
+                        } else {
+                            profitByProduct[product.name] = itemProfit;
+                        }
+                    }
+                });
+            });
+
+            const totalDailyRevenue = todaySales.reduce((sum, s) => sum + s.total, 0);
+            const totalDailyProfit = todaySales.reduce((sum, s) => sum + s.profit, 0);
+
+            // --- Preparación de datos para las hojas ---
+            const productsData = products.map(p => ({ ID: p.id, Nombre: p.name, Costo: p.costPrice, "Precio Venta": p.sellingPrice, Stock: p.stock }));
+            
+            const allSalesData = sales.map(s => {
+                const itemsStr = s.items.map(item => {
+                    const product = products.find(p => p.id === item.productId);
+                    return `${product ? product.name : 'N/A'} (x${item.quantity})`;
+                }).join(', ');
+                return { "ID Venta": s.id, Fecha: new Date(s.date).toLocaleString(), Cliente: s.customerName, Estado: s.status, Items: itemsStr, Total: s.total, Ganancia: s.profit };
+            });
+
+            const summaryData = [];
+            summaryData.push(["Resumen de Ventas del Día:", new Date().toLocaleDateString('es-ES')]);
+            summaryData.push([]);
+            summaryData.push(["Ganancia por Producto"]);
+            summaryData.push(["Producto", "Ganancia Total"]);
+            Object.keys(profitByProduct).forEach(productName => {
+                summaryData.push([productName, profitByProduct[productName]]);
+            });
+            summaryData.push([]);
+            summaryData.push(["Totales del Día"]);
+            summaryData.push(["Venta Total", totalDailyRevenue]);
+            summaryData.push(["Ganancia Total", totalDailyProfit]);
+
+            // --- Creación del libro y las hojas ---
+            const wb = XLSX.utils.book_new();
+            const wsProducts = XLSX.utils.json_to_sheet(productsData);
+            const wsSales = XLSX.utils.json_to_sheet(allSalesData);
+            const wsSummary = XLSX.utils.aoa_to_sheet(summaryData);
+            
+            wsSummary['!cols'] = [{ wch: 30 }, { wch: 15 }];
+
+            XLSX.utils.book_append_sheet(wb, wsProducts, "Inventario");
+            XLSX.utils.book_append_sheet(wb, wsSales, "Historial Ventas");
+            XLSX.utils.book_append_sheet(wb, wsSummary, "Resumen del Dia");
+
+            // --- Generación y compartición del archivo ---
+            const wbout = XLSX.write(wb, { type: 'base64', bookType: 'xlsx' });
+            const nombreArchivo = `reporte_${new Date().toISOString().split('T')[0]}.xlsx`;
+            const uri = FileSystem.cacheDirectory + nombreArchivo;
+            await FileSystem.writeAsStringAsync(uri, wbout, { encoding: FileSystem.EncodingType.Base64 });
+            await Sharing.shareAsync(uri, { mimeType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', dialogTitle: 'Exportar Reporte de Ventas' });
+
+            Alert.alert("Exportación Exitosa", "¿Deseas borrar las ventas del historial para comenzar un nuevo día?",
+                [{ text: "No", style: "cancel" }, { text: "Sí, borrar", onPress: () => clearSales(), style: "destructive" }]
+            );
+
+        } catch (error) {
+            console.error("Error al exportar:", error);
+            Alert.alert("Error", `No se pudo generar el archivo Excel. ${error.message}`);
+        }
     };
 
     const renderItem = ({ item }) => {
@@ -498,12 +597,33 @@ const HistoryScreen = () => {
             const product = products.find(p => p.id === saleItem.productId);
             return `${product ? product.name : 'Eliminado'} (x${saleItem.quantity})`;
         }).join(', ');
+        
+        const isPending = item.status === 'Pendiente';
+        const statusStyle = {
+            backgroundColor: isPending ? COLORS.status_pending_bg : COLORS.status_delivered_bg,
+            color: isPending ? COLORS.status_pending_text : COLORS.status_delivered_text,
+        };
+
         return (
             <View style={styles.itemContainer}>
                 <View style={styles.itemInfo}>
-                    <Text style={styles.itemName}>Venta - {new Date(item.date).toLocaleString()}</Text>
+                    <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
+                        <Text style={[styles.itemName, {marginBottom: 4}]}>{item.customerName || 'Cliente General'}</Text>
+                        <View style={[styles.statusBadge, statusStyle]}>
+                            <Text style={[styles.statusBadgeText, {color: statusStyle.color}]}>{item.status}</Text>
+                        </View>
+                    </View>
+                    <Text style={styles.itemDetails}>Fecha: {new Date(item.date).toLocaleString()}</Text>
                     <Text style={styles.itemDetails}>Productos: {soldItemsText}</Text>
                     <Text style={styles.itemDetailsBold}>Total: ${item.total.toFixed(2)} | Ganancia: ${item.profit.toFixed(2)}</Text>
+                    
+                    {isPending && (
+                        <TouchableOpacity 
+                            style={styles.markAsDeliveredButton} 
+                            onPress={() => updateSaleStatus(item.id, 'Entregado')}>
+                            <Text style={styles.markAsDeliveredButtonText}>Marcar como Entregado</Text>
+                        </TouchableOpacity>
+                    )}
                 </View>
                 <TouchableOpacity onPress={() => confirmDelete(item.id)} style={styles.iconButton}>
                     <Icon name="trash-bin-outline" size={24} color={COLORS.danger} />
@@ -536,16 +656,16 @@ export default function InventoryApp() {
   return (
     <AppProvider>
       <StatusBar barStyle="light-content" />
-      {/* Se eliminó el NavigationContainer para compatibilidad con Expo Router */}
+      {/* Se elimina NavigationContainer para compatibilidad con Expo Router */}
       <Stack.Navigator
         screenOptions={{
           headerStyle: { backgroundColor: COLORS.primary },
           headerTintColor: COLORS.surface,
           headerTitleStyle: { fontWeight: 'bold' },
-          headerShadowVisible: false, // Un look más plano y moderno
+          headerShadowVisible: false,
         }}
       >
-        <Stack.Screen name="Resumen" component={HomeScreen} options={{ title: '  Gestion de ventas y control de stock' }} />
+        <Stack.Screen name="Resumen" component={HomeScreen} options={{ title: 'Gestion de ventas y control de stock' }} />
         <Stack.Screen name="Inventario" component={InventoryScreen} />
         <Stack.Screen name="Nueva Venta" component={NewSaleScreen} />
         <Stack.Screen name="Historial" component={HistoryScreen} options={{ title: 'Historial de Ventas' }} />
@@ -603,7 +723,7 @@ const styles = StyleSheet.create({
   itemInfo: { flex: 1, marginRight: 12 },
   itemName: { fontSize: 16, fontWeight: '600', color: COLORS.text_primary },
   itemDetails: { fontSize: 14, color: COLORS.text_secondary, marginTop: 4 },
-  itemDetailsBold: { fontSize: 14, color: COLORS.text_secondary, marginTop: 4, fontWeight: '500' },
+  itemDetailsBold: { fontSize: 14, color: COLORS.text_primary, marginTop: 4, fontWeight: '600' },
   itemStockContainer: { alignItems: 'center', backgroundColor: COLORS.primary_light, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 8 },
   itemStockText: { fontSize: 20, fontWeight: 'bold', color: COLORS.primary },
   
@@ -615,7 +735,7 @@ const styles = StyleSheet.create({
   buttonTextPrimary: { color: COLORS.surface, fontWeight: 'bold', fontSize: 16 },
   buttonTextSecondary: { color: COLORS.text_primary, fontWeight: 'bold', fontSize: 16 },
   confirmButton: { backgroundColor: COLORS.primary, padding: 16, borderRadius: 12, alignItems: 'center' },
-  exportButton: { backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 15, margin: 16, borderRadius: 10, elevation: 2 },
+  exportButton: { backgroundColor: COLORS.secondary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 15, margin: 16, borderRadius: 10, elevation: 2 },
   aiButton: { backgroundColor: COLORS.primary, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', padding: 15, margin: 16, borderRadius: 10, elevation: 2, gap: 8 },
   iconButton: { padding: 8 },
   
@@ -635,4 +755,26 @@ const styles = StyleSheet.create({
   
   // --- Varios ---
   emptyText: { textAlign: 'center', marginTop: 50, fontSize: 16, color: COLORS.text_secondary },
+
+  // --- NUEVO: Estilos para el historial de ventas ---
+  statusBadge: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    borderRadius: 12,
+  },
+  statusBadgeText: {
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  markAsDeliveredButton: {
+    backgroundColor: COLORS.primary_light,
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  markAsDeliveredButtonText: {
+    color: COLORS.primary,
+    fontWeight: 'bold',
+  },
 });
